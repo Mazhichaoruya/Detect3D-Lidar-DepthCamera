@@ -7,7 +7,7 @@
     <include file="$(find rslidar_pointcloud)/launch/rs_lidar_16.launch"/>
     <include file="$(find realsense2_camera)/launch/rs_camera.launch"/>
     <include file="$(find astra_camera)/launch/astra.launch"/>
-<!--    <node pkg="detector3d" type="decpub" name="object_detect" output="screen"/>-->
+    <node pkg="detector3d" type="decpub" name="object_detect" output="screen"/>
 <!--    <node pkg="detector3d" type="decdeal" name="Object_views" output="screen"/>-->
     <!--- TF 变换 相机 雷达和ROS坐标系之间的转换-->
 <!--    <node pkg="tf" type="static_transform_publisher" name="pointcloud_init_to_camera"  args="0 0 0 0   0        0 /camera    /objects 30" />-->

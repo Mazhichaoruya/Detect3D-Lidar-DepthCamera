@@ -27,6 +27,7 @@ struct Cluster {
     cv::Rect R;
     int index;
     int cloudsize;
+    pcl::PointXYZ center_point;
     pcl::PointCloud<pcl::PointXYZI>::Ptr pointcould;
 };
 struct Camera_info{
@@ -34,14 +35,16 @@ struct Camera_info{
     Eigen::Matrix<float,3,3> RLtoC;//雷达和相机的旋转变换
     Eigen::Matrix<float,3,3> Camerainfo;//相机内参数
     int index,imageheigth,imagewidth;//图像大小
+    int max_y,min_y;
 };
 class lidar_pointcloud {
 private:
-    pcl::search::KdTree<pcl::PointXYZI>::Ptr tree;
+//    pcl::search::KdTree<pcl::PointXYZI>::Ptr tree;
     DBSCANKdtreeCluster<pcl::PointXYZI> ec;
+//    pcl::EuclideanClusterExtraction<pcl::PointXYZI> ec;
 public:
     int cloudsize;
-    std::vector<Camera_info> cam_vec;
+    std::array<Camera_info,2> cam_vec;
     pcl::PointCloud<pcl::PointXYZI>::Ptr cloud;
     pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_cluster;
     pcl::PointCloud<pcl::PointXYZI>::Ptr cloudIncamera;

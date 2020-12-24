@@ -46,7 +46,7 @@ void depth_pointcloud::init(cv::Mat &depthmat,int id){
             Eigen::Vector3f point3d =depthmat.at<uint16_t>(i, j)/1000.0*cam.RLtoC.inverse()*(cam.Camerainfo.inverse()*Eigen::Vector3f{j, i, 1}-cam.TLtoC);//转为深度相机坐标系 *MTR.inverse()
             pcl::PointXYZI point;
             point.x=point3d.x();point.y=point3d.y();point.z=point3d.z();
-            if (point.z>-0.27)
+            if (point.z>-0.70)//机器人设置高度-0.27
                 cloud->push_back(point);
             }
         }
@@ -63,7 +63,7 @@ void depth_pointcloud::pointcloud_predeal() {
     vg.filter(*cloud_f);
     int downsampled_points_total_size = cloud_f->points.size();
     std::cout << "PointCloud after filtering has: " << downsampled_points_total_size  << " data points." << std::endl;
-//    show_point_cloud(cloud_filtered, "downsampled point cloud");
+//    show_point_cloud(cloud_f, "downsampled point cloud");
 /*弃用RANSAC 寻找最大平面不稳定
     // remove the biggest plane
     // Segmentation, Ransac, [Plane model segmentation](https://pcl.readthedocs.io/projects/tutorials/en/latest/planar_segmentation.html#planar-segmentation)
@@ -126,11 +126,11 @@ void depth_pointcloud::pointcloud_cluster(){
 
     ec.setClusterTolerance(0.2);
     ec.setMinClusterSize(20);
-    ec.setMaxClusterSize(2000);
+    ec.setMaxClusterSize(20000);
     ec.setSearchMethod(tree);
     ec.setInputCloud(cloud_f);
     ec.extract(cluster_indices);
-//    std::cout<<cluster_indices.end()-cluster_indices.begin()<<std::endl;
+    std::cout<<cluster_indices.end()-cluster_indices.begin()<<std::endl;
     //visualization, use indensity to show different color for each cluster.
     for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); it++, j++) {
         int minx = cam.imagewidth, miny = cam.imageheigth, maxx = 0, maxy = 0;
@@ -145,7 +145,7 @@ void depth_pointcloud::pointcloud_cluster(){
             point3d.z() = tmp.z = cloud_f->points[*pit].z;
             tmp.intensity = j;
             cloud_cluster->points.push_back(tmp);
-            auto B = camrgb.Camerainfo*camrgb.RLtoC * (cam.RLtoC*(point3d+cam.TLtoC) + camrgb.TLtoC);
+            auto B = camrgb.Camerainfo*(camrgb.RLtoC * (cam.RLtoC*point3d+cam.TLtoC) + camrgb.TLtoC);
             Eigen::Vector3f imgpix = B / B.z();
 //            std::cout<<"B:"<<B.x()<<" "<<B.y()<<" "<<B.z()<<std::endl;
 //            std::cout<<"imgpix:"<<imgpix.x()<<" "<<imgpix.y()<<" "<<imgpix.z()<<std::endl;
@@ -166,13 +166,13 @@ void depth_pointcloud::pointcloud_cluster(){
                 Clu_tmp.cloudsize = Clu_tmp.pointcould->size();
                 Clu_tmp.R = cv::Rect(minx, miny, (maxx - minx), (maxy - miny));
                 vec_clu.push_back(Clu_tmp);
-//            std::cout<<"RECT:"<<index<<":<"<<minx<<","<<miny<<"><"<<maxx<<","<<maxy<<"> size:"<<Clu_tmp.cloudsize<<std::endl;
-//                index++;
+            std::cout<<"RECT:"<<index<<":<"<<minx<<","<<miny<<"><"<<maxx<<","<<maxy<<"> size:"<<Clu_tmp.cloudsize<<std::endl;
+                index++;
             }
     }
     cloud_cluster->width = cloud_cluster->points.size();
     cloud_cluster->height = 1;
 //    show_point_cloud(cloud_cluster, "colored clusters of point cloud");//可视化
     clock_t end_ms = clock();
-    std::cout << "cluster time cost:" << double(end_ms - start_ms) / CLOCKS_PER_SEC << " s" << std::endl;
+//    std::cout << "cluster time cost:" << double(end_ms - start_ms) / CLOCKS_PER_SEC << " s" << std::endl;
 }

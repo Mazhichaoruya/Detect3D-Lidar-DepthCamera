@@ -29,9 +29,10 @@
 #define BATCH_SIZE 1
 #define DepthEnable 0
 #define LidarEnable 1
+#define SLAMEnable 0
 //#define VIDEO_TYPE (3) //0 means laptop camera ;1 means images,2 means Videos,3 means Depthcamera,4 means lidar&camera;
 #define NORT (1)//Astra or Xtion have no RT of RGB&Depth Camera sys
-#define NET s  // s m l x
+#define NET l  // s m l x
 #define NETSTRUCT(str) createEngine_##str
 #define CREATENET(net) NETSTRUCT(net)
 #define STR1(x) #x

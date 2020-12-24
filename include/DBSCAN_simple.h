@@ -21,6 +21,7 @@ public:
     }
 
     void setSearchMethod(KdTreePtr tree) {
+//        search_method_.reset(new pcl::search::KdTree<pcl::PointXYZI>);
         search_method_ = tree;
     }
 
@@ -90,6 +91,7 @@ public:
     }
 
     void setClusterTolerance(double tolerance) {
+//        search_method_.reset(new pcl::search::KdTree<pcl::PointXYZI>);
         eps_ = tolerance; 
     }
 

@@ -27,7 +27,7 @@ using namespace std;
 Eigen::Matrix<float,3,3> MTR,MTR1,R_deptoimg,R_deptoimg1;//相机坐标旋转矩阵
 Eigen::Vector3f V_T,V_T1,T_deptoimg,T_deptoimg1;//平移向量T
 Eigen::Matrix<float,3,3> Inner_Transformation_Depth,InnerTransformation_Color,Inner_Transformation_Depth1,InnerTransformation_Color1;// 相机内参
-cv::Mat Depthmate,Dec_mat,color_mat;
+cv::Mat Depthmate,color_mat;
 vector<string> classNamesVec;
 const auto window_name= "RGB Image";
 char* input="../input/VOC";
@@ -94,8 +94,13 @@ public:
     ros::Publisher Objectimg_pub,clusterimage_pub,clusterimgdp_pub;
     ros::Publisher pointcloud_clustered,pointcloud_camera,pointcloud_detect,pointcloud_detect1;
     Camera(){
-        if (LidarEnable)
-            sublidarpcl=n.subscribe<sensor_msgs::PointCloud2>("/rslidar_points",1, &Camera::pointcloudcallback, this);//rslidar_points
+        if (LidarEnable){
+            if (SLAMEnable)
+                sublidarpcl=n.subscribe<sensor_msgs::PointCloud2>("/segmented_cloud_pure",10, &Camera::pointcloudcallback, this);//rslidar_points
+            else
+                sublidarpcl=n.subscribe<sensor_msgs::PointCloud2>("/rslidar_points",10, &Camera::pointcloudcallback, this);//rslidar_points
+        }
+
         subrgbcaminfo= n.subscribe("/D455/color/camera_info", 10, &Camera::inforgbcallback, this);
         subrgbcaminfo1= n.subscribe("/Astra/rgb/camera_info", 10, &Camera::inforgbcallback1, this);
 
@@ -103,7 +108,7 @@ public:
             R_deptoimg<<1,0,0,0,1,0,0,0,1;//初始化深度-彩色相机 相机转换矩阵 可能未发布
             T_deptoimg<<0,0,0;
             R_deptoimg1<<1,0,0,0,1,0,0,0,1;
-            T_deptoimg1<<0,0,0;
+            T_deptoimg1<<0.06,0,0;
             subdepthtoclolor = n.subscribe( "/D455/extrinsics/depth_to_color",1, &Camera::depth_to_colorcallback,this);
             subdepthcaminfo = n.subscribe("/D455/depth/camera_info", 1, &Camera::infodepthcallback,this);
             subdepthimg = n.subscribe("/D455/depth/image_rect_raw", 10, &Camera::imgdepthcallback,this);
@@ -116,12 +121,14 @@ public:
         if (NORT)
         {
             MTR<<0,-1,0,0,0,-1,1,0,0;//深度相机和RGB相机转换外参x->-y y->-z z->x前方相机 realsense
-            V_T<<0.0965,-0.01,-0.058;//baselink在相机坐标系下坐标 用于雷达像相机投影
+            V_T<<-0.1065,0.02,0.108;//baselink在相机坐标系下坐标 用于雷达像相机投影
             MTR1<<0,1,0,0,0,-1,-1,0,0;//深度相机和RGB相机转换外参x->y y->-z z->-x  后方相机 Astra
-            V_T1<<-0.1265,-0.01,-0.058;//baselink在相机坐标系下坐标 用于雷达像相机投影
+            V_T1<<0.15,-0.04,0.05;//baselink在相机坐标系下坐标 用于雷达像相机投影
         }
         if (LidarEnable){
             pointcloud_camera=n.advertise<sensor_msgs::PointCloud2>("/pointcloud_camera",1);
+            clusterimage_pub=n.advertise<sensor_msgs::Image>("clusterimg1",1);
+
         }
         pointcloud_clustered=n.advertise<sensor_msgs::PointCloud2>("/pointcloud_clustered",1);
         pointcloud_detect=n.advertise<sensor_msgs::PointCloud2>("/pointcloud_detect",1);
@@ -227,9 +234,9 @@ public:
 
     //点云处理回调函数
     void pointcloudcallback(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg){
-        if (Colorinfo==false||Colorinfo1==false)
+        if (Colorinfo1==false||Colorinfo== false)//||Colorinfo1==false
             return;
-        lidar.vec_clu.clear();//
+//        std::cout<<"Pointcloudcallback"<<endl;
         sensor_msgs::PointCloud2 clustered,camera;
         cloudHeader.stamp=camera.header.stamp=clustered.header.stamp=laserCloudMsg->header.stamp;
         laserCloudIn.reset(new pcl::PointCloud<pcl::PointXYZI>());
@@ -241,15 +248,20 @@ public:
         lidar.pointcloud_cluster();
         pcl::toROSMsg(*(lidar.cloud_cluster),clustered);
         pcl::toROSMsg(*(lidar.cloudIncamera),camera);
+//        sensor_msgs::ImagePtr img=cv_bridge::CvImage(std_msgs::Header(),"bgr8",lidar.lidar_clus).toImageMsg();
+//        img->header.stamp=ros::Time::now();
+//        img->header.frame_id="base_link";
         clustered.header.frame_id="base_link";
         camera.header.frame_id="base_link";
         pointcloud_clustered.publish(clustered);//发布聚类后的点云 intensity的值表示类别
         pointcloud_camera.publish(camera);
+//        clusterimage_pub.publish(img);
     }
     //图像处理回调函数
     void imgrgbcallback(const sensor_msgs::ImageConstPtr& msg){
-        if (Colorinfo== false||Colorinfo1== false)
+        if (Colorinfo1== false||Colorinfo== false)
             return;
+//        std::cout<<"imagecallback"<<endl;
         auto Timeofimg=msg->header.stamp.toSec()-cloudHeader.stamp.toSec();
 //        if (LidarEnable){
 //            if (std::abs(Timeofimg)>=0.1)//时间戳同步
@@ -265,15 +277,15 @@ public:
         if (LidarEnable){
             Objectlidartoimg.VecIOU.clear();//清空原始目标的容器
             Objectlidartoimg.objects.clear();
-            vector<Cluster> clus;
+            Objectlidartoimg.clusters.clear();
             if (!lidar.vec_clu.empty())
             {
                 for (auto clu:lidar.vec_clu) {
                     if (clu.index == camid)
-                        clus.push_back(clu);
+                        Objectlidartoimg.clusters.push_back(clu);
                 }
+                cout<<"camera:"<<camid<<"cluster size:"<< Objectlidartoimg.clusters.size()<<endl;
             }
-            Objectlidartoimg.clusters = clus;
         }
         if (DepthEnable){
             ObjectDepthtoimg.VecIOU.clear();
@@ -285,8 +297,8 @@ public:
         cv_bridge::CvImagePtr cv_ptr;
         cv_ptr = cv_bridge::toCvCopy(msg, "bgr8");
         color_mat=cv_ptr->image;
-        Dec_mat = Dection(color_mat);
-        sensor_msgs::ImagePtr img=cv_bridge::CvImage(std_msgs::Header(),"bgr8",Dec_mat).toImageMsg();
+        Dection(color_mat);
+        sensor_msgs::ImagePtr img=cv_bridge::CvImage(std_msgs::Header(),"bgr8",color_mat).toImageMsg();
         img->header.stamp=ros::Time::now();
         img->header.frame_id="base_link";
         if (camid==0)
@@ -318,7 +330,7 @@ public:
                 }
             }
         }
-        if (LidarEnable&&Objectlidartoimg.objects.size()>0&&Objectlidartoimg.clusters.size()>0){
+        if (LidarEnable&&!Objectlidartoimg.objects.empty()&&!Objectlidartoimg.clusters.empty()){
             Objectlidartoimg.BoxesMatch();//匹配摄像头和雷达的点云
             Objectlidartoimg.initobjects();//获取语义点云
             for (auto object:Objectlidartoimg.objects){
@@ -327,7 +339,7 @@ public:
                   point.x=i.x;
                   point.y=i.y;
                   point.z=i.z;
-                  point.intensity = 255-object.object.classID*10;//Intensity 用于可视化区分类别
+                  point.intensity = 255-object.object.classID*2;//Intensity 用于可视化区分类别
 //                  cout<<"point="<<i.x<<i.y<<i.z<<endl;
                   cloud.push_back(point);
                 }
@@ -344,7 +356,7 @@ public:
     }
     //深度流处理回调函数
     void imgdepthcallback(const sensor_msgs::ImageConstPtr& msg){
-        if(Depthinfo==0||Depthinfo1==0)
+        if(Depthinfo==0||Depthinfo1==0)//
             return;
         cloudHeader.stamp = msg->header.stamp;
         if (msg->header.frame_id=="Astra_rgb_optical_frame")
@@ -379,7 +391,7 @@ public:
         CHECK(cudaMemcpyAsync(output, buffers[1], batchSize * OUTPUT_SIZE * sizeof(float), cudaMemcpyDeviceToHost, stream));
         cudaStreamSynchronize(stream);
     }
-    cv::Mat Dection(cv::Mat img){
+    void Dection(cv::Mat &img){
         int fcount = 0;
         fcount++;
         for (int b = 0; b < fcount; b++) {
@@ -410,12 +422,12 @@ public:
         for (int b = 0; b < fcount; b++) {
             auto& res = batch_res[b];
             ObjectImgtoDepth ObjectItoD;
-            std::cout <<"num:"<<res.size()<<" ";
+//            std::cout <<"num:"<<res.size()<<" ";
             for (size_t j = 0; j < res.size(); j++) {
                 cv::Rect r = get_rect(img, res[j].bbox);
                 cv::rectangle(img, r, cv::Scalar(0x27, 0xC1, 0x36), 2);
                 cv::putText(img, classNamesVec[(int)res[j].class_id], cv::Point(r.x, r.y - 1), cv::FONT_HERSHEY_PLAIN, 1.2, cv::Scalar(0xFF, 0xFF, 0xFF), 2);
-                std::cout<<classNamesVec[(int)res[j].class_id]<<";";
+//                std::cout<<classNamesVec[(int)res[j].class_id]<<";";
                 if (DepthEnable){
                     ObjectItoD.object.classID=(int)res[j].class_id;
                     ObjectItoD.object.classname=classNamesVec[(int)res[j].class_id];
@@ -432,17 +444,24 @@ public:
                 if (LidarEnable){
                     ObjectItoD.object.classID=(int)res[j].class_id;
                     ObjectItoD.object.classname=classNamesVec[(int)res[j].class_id];
-                    if (r.x<0)
+                    if (r.x<0){
+                        r.width+=r.x;
                         r.x=0;
-                    if (r.y<0)
-                        r.y=0;
+                    }
+                    if (r.y<lidar.cam_vec.at(camid).min_y){
+                        r.height-=(lidar.cam_vec.at(camid).min_y-r.y);
+                        r.y=lidar.cam_vec.at(camid).min_y;
+                    }
+                    if (r.y+r.height>lidar.cam_vec.at(camid).max_y)
+                        r.height-=r.y+r.height-lidar.cam_vec.at(camid).max_y;
                     ObjectItoD.Rimg=r;
+//                    cv::rectangle(img, ObjectItoD.Rimg, cv::Scalar(255, 0, 0), 2);
                     Objectlidartoimg.objects.push_back(ObjectItoD);
                 }
             }
-            std::cout<<std::endl;
+//            std::cout<<std::endl;
         }
-        return img;
+//        return img;
     }
 };
 

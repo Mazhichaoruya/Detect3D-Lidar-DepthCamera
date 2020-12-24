@@ -32,10 +32,30 @@ float Objects::CalIOU(cv::Rect Ri, cv::Rect Rl) {
 bool Objects::BoxesMatch() {
 //    cout<<"obj:"<<objects.size()<<" clu:"<<clusters.size()<<endl;
     for (auto obj:objects){
-        vector<float> IOUObj;
-        for (auto clu:clusters){
-            IOUObj.push_back(CalIOU(obj.Rimg,clu.R));
+        vector<float> IOUObj,copyx,copyx_,areaRmix,areaplus;
+        vector<cv::Rect> Rmix;
+        for (int i = 0; i < clusters.size(); ++i) {
+            Rmix.push_back(clusters.at(i).R & obj.Rimg);
+            copyx.push_back(abs(clusters.at(i).center_point.x));
+            areaRmix.push_back(Rmix.at(i).area());
+            areaplus.push_back((obj.Rimg|clusters.at(i).R).area());
         }
+        copyx_=copyx;
+        sort(copyx_.begin(),copyx_.end());
+        for (int i = 0; i < copyx.size(); ++i) {
+            auto iter=find(copyx_.begin(),copyx_.end(),copyx.at(i));
+            clusters.at(i).index=iter-copyx_.begin();
+        }
+        for (int i = 0; i < clusters.size(); ++i) {
+            for (int j = 0; j < Rmix.size(); ++j) {
+                if (clusters.at(i).index>clusters.at(j).index)
+                    areaRmix.at(i)-=(Rmix.at(i)&Rmix.at(j)).area();
+            }
+            IOUObj.push_back(areaRmix.at(i)/areaplus.at(i));
+        }
+//        for (auto clu:clusters){
+//            IOUObj.push_back(CalIOU(obj.Rimg,clu.R));
+//        }
         VecIOU.push_back(IOUObj);
     }
 //    cout<<"sizeIOU:"<<VecIOU.size()<<endl;
@@ -51,7 +71,7 @@ bool Objects::BoxesMatch() {
         if (copy.at(copy.size()-1)>IOU_Threshold_max){//IOU大于0.5则认为匹配
             auto iter=find(VecIOU.at(i).begin(),VecIOU.at(i).end(),copy.at(copy.size()-1));
             objects.at(i).index=iter-VecIOU.at(i).begin()+1;
-            cout<<"IOU="<<copy.at(copy.size()-1)<<endl;
+//            cout<<"IOU="<<copy.at(copy.size()-1)<<endl;
         }
         if (copy.at(copy.size()-1)<IOU_Threshold_min){//IOU小于0.05则认为匹配失败
             objects.at(i).index=0;
@@ -62,13 +82,21 @@ bool Objects::BoxesMatch() {
 //                objects.at(i).index=(iter-VecIOU.at(i).begin()+1);
 //            else
             objects.at(i).index=-(iter-VecIOU.at(i).begin()+1);
-            cout<<"IOU="<<copy.at(copy.size()-1)<<endl;
+//            cout<<"IOU="<<copy.at(copy.size()-1)<<endl;
         }
+    }
+}
+template <typename PointCloudPtrType>
+void show_point_cloud(PointCloudPtrType cloud, std::string display_name) {
+    pcl::visualization::CloudViewer viewer(display_name);
+    viewer.showCloud(cloud);
+    while (!viewer.wasStopped())
+    {
     }
 }
 void Objects::initobjects() {
     if (LidarEnable){
-        IOU_Threshold_max=0.4;IOU_Threshold_min=0.05;
+        IOU_Threshold_max=0.5;IOU_Threshold_min=0.05;
     } else if(DepthEnable){
         IOU_Threshold_max=0.5;IOU_Threshold_min=0.1;
     }
@@ -76,11 +104,11 @@ void Objects::initobjects() {
         objects.at(i).Pointcloud.reset(new pcl::PointCloud<pcl::PointXYZI>);
         if (objects.at(i).index>0){
           objects.at(i).Pointcloud=clusters.at(objects.at(i).index-1).pointcould;
-          cout<<"Matched successfully Only by First Clustered!"<<"poincloud size:"<<objects.at(i).Pointcloud->size()<<endl;
+//          cout<<"Matched successfully Only by First Clustered!"<<"poincloud size:"<<objects.at(i).Pointcloud->size()<<endl;
         }
         else if (objects.at(i).index==0){//失败
             objects.at(i).Pointcloud->points.clear();
-            cout<<"Matched Failed!"<<endl;
+//            cout<<"Matched Failed!"<<endl;
         }else{ ////进一步 半监督Kmeans聚类操作
             KMeans kmclusters;
             kmclusters.SetK(3);//3类中 0 1 2 依次为目标类 非目标类  其他
@@ -88,6 +116,7 @@ void Objects::initobjects() {
             kmclusters.rectclu=clusters.at(-objects.at(i).index-1).R;//当前聚类框
             kmclusters.SetInputCloud(clusters.at(-objects.at(i).index-1).pointcould);
             kmclusters.Cluster();
+//            cout<<"poincloud size:"<<kmclusters.m_grp_pntcloud.at(0).size()<<" "<<kmclusters.m_grp_pntcloud.at(1).size()<<" "<<kmclusters.m_grp_pntcloud.at(2).size()<<endl;
             for(auto p:kmclusters.m_grp_pntcloud.at(0)){
                 pcl::PointXYZI pI;
                 pI.x=p.pnt.x;
@@ -96,7 +125,20 @@ void Objects::initobjects() {
                 pI.intensity=i;
                 objects.at(i).Pointcloud->push_back(pI);
             }
-            cout<<"Matched by Twice Clustered successfully!"<<"poincloud size:"<<kmclusters.m_grp_pntcloud.at(0).size()<<endl;
+            //调试Kmeans聚类效果
+//            pcl::PointCloud<pcl::PointXYZI>::Ptr pckmeans(new pcl::PointCloud<pcl::PointXYZI>);
+//            for (auto pck_cloud:kmclusters.m_grp_pntcloud) {
+//                for(auto p:pck_cloud){
+//                    pcl::PointXYZI pI;
+//                    pI.x=p.pnt.x;
+//                    pI.y=p.pnt.y;
+//                    pI.z=p.pnt.z;
+//                    pI.intensity=p.groupID+1;
+//                    pckmeans->points.push_back(pI);
+//                }
+//            }
+//            show_point_cloud(pckmeans, "pointcloud pckmeans");
+//            cout<<"Matched by Twice Clustered successfully!"<<"poincloud size:"<<kmclusters.m_grp_pntcloud.at(0).size()<<endl;
         }
     }
 }

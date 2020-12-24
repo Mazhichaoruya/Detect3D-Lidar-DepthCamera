@@ -22,7 +22,7 @@ bool KMeans::InitKCenter( )//m_k ==3
     Eigen::Vector3f point3d;
     st_pointxyz zero;
     zero.x=0;zero.y=0;zero.z=0;
-    float last_in=MAXFLOAT,last_out_max=0.0,last_out_min=MAXFLOAT,centerx,centery;
+    float last_in=MAXFLOAT,last_out_max=0.0,last_in_max=0.0,centerx,centery;
     centerx=rectobj.x+rectobj.width/2;centery=rectobj.y+rectobj.height/2;
     float r1=(abs(rectclu.y-rectobj.y)+rectclu.height/2)*(abs(rectclu.y-rectobj.y)+rectclu.height/2)+(abs(rectclu.x-rectobj.x)+rectclu.width/2)*(abs(rectclu.x-rectobj.x)+rectclu.width/2);
     float r2=(rectobj.height/2)*(rectobj.height/2)+(rectobj.width/2)*(rectobj.width/2);
@@ -39,6 +39,10 @@ bool KMeans::InitKCenter( )//m_k ==3
             mv_center.at(0)=mv_pntcloud.at(i).pnt;
             last_in=distance;
             }
+            if(distance>last_in_max){//其他点选择目标区域内最远的点
+                mv_center.at(2)=mv_pntcloud.at(i).pnt;
+                last_in_max=distance;
+            }
         mv_pntcloud.at(i).weight=1-((imgpix.x()-centerx)*(imgpix.x()-centerx)+(imgpix.y()-centery)*(imgpix.y()-centery))/r2;//在目标区域内的约束权重以单位圆均匀分布
         }
         else{
@@ -46,10 +50,6 @@ bool KMeans::InitKCenter( )//m_k ==3
             if(distance>last_out_max){ //非目标点--框外最远点作为起始点
                 mv_center.at(1)=mv_pntcloud.at(i).pnt;
                 last_out_max=distance;
-            }
-            if(distance<last_out_min){//其他点选择目标区域外最近的点
-                mv_center.at(2)=mv_pntcloud.at(i).pnt;
-                last_out_min=distance;
             }
             mv_pntcloud.at(i).weight=((imgpix.x()-centerx)*(imgpix.x()-centerx)+(imgpix.y()-centery)*(imgpix.y()-centery))/r1;//在目标区域外的约束权重以单位圆均匀分布
         }
