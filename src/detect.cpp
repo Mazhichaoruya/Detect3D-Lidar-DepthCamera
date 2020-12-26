@@ -22,6 +22,9 @@
 #include "lidar_pointcloud.h"
 #include "depth_pointcloud.h"
 #include "detect.h"
+#include <visualization_msgs/Marker.h>
+#include<visualization_msgs/MarkerArray.h>
+#include "fstream"
 //#include <image_transport/image_transport.h> // 用来发布和订阅图像信息
 using namespace std;
 Eigen::Matrix<float,3,3> MTR,MTR1,R_deptoimg,R_deptoimg1;//相机坐标旋转矩阵
@@ -33,8 +36,10 @@ const auto window_name= "RGB Image";
 char* input="../input/VOC";
 char* output="../output/";
 std::string filename;
-std::string weight="/home/mzc/code/CLionProjects/Yolov5_trt/engine/old/";
-std::string classname_path="/home/mzc/code/CLionProjects/Yolov5_trt/engine/coco.names";
+//std::string weight="/home/mzc/code/CLionProjects/Yolov5_trt/engine/old/";
+std::string weight="/home/ax/code/Yolov5_trt/engine/";
+//std::string classname_path="/home/mzc/code/CLionProjects/Yolov5_trt/engine/coco.names";
+std::string classname_path="/home/ax/code/Yolov5_trt/engine/coco.names";
 //stuff we know about the network and the input/output blobs
 static const int INPUT_H = Yolo::INPUT_H;
 static const int INPUT_W = Yolo::INPUT_W;
@@ -55,6 +60,7 @@ int inputIndex;
 int outputIndex;
 void* buffers[2];
 cudaStream_t stream;
+ofstream resultfiles;
 /////////////////////////////
 //DNN opencv与CV-bridge冲突暂时不可用
 /*Net net;//DNN net
@@ -93,6 +99,7 @@ public:
     ros::Publisher Object_pub,Objectimg_pub1;
     ros::Publisher Objectimg_pub,clusterimage_pub,clusterimgdp_pub;
     ros::Publisher pointcloud_clustered,pointcloud_camera,pointcloud_detect,pointcloud_detect1;
+    ros::Publisher marker_pub,text_pub,marker_pub1,text_pub1;
     Camera(){
         if (LidarEnable){
             if (SLAMEnable)
@@ -107,7 +114,7 @@ public:
         if (DepthEnable){
             R_deptoimg<<1,0,0,0,1,0,0,0,1;//初始化深度-彩色相机 相机转换矩阵 可能未发布
             T_deptoimg<<0,0,0;
-            R_deptoimg1<<1,0,0,0,1,0,0,0,1;
+            R_deptoimg1<<1,0,0,0,1,0,0,0,1;// Astra
             T_deptoimg1<<0.06,0,0;
             subdepthtoclolor = n.subscribe( "/D455/extrinsics/depth_to_color",1, &Camera::depth_to_colorcallback,this);
             subdepthcaminfo = n.subscribe("/D455/depth/camera_info", 1, &Camera::infodepthcallback,this);
@@ -126,17 +133,20 @@ public:
             V_T1<<0.15,-0.04,0.05;//baselink在相机坐标系下坐标 用于雷达像相机投影
         }
         if (LidarEnable){
-            pointcloud_camera=n.advertise<sensor_msgs::PointCloud2>("/pointcloud_camera",1);
+            pointcloud_camera=n.advertise<sensor_msgs::PointCloud2>("/pointcloud_camera",10);
             clusterimage_pub=n.advertise<sensor_msgs::Image>("clusterimg1",1);
 
         }
-        pointcloud_clustered=n.advertise<sensor_msgs::PointCloud2>("/pointcloud_clustered",1);
-        pointcloud_detect=n.advertise<sensor_msgs::PointCloud2>("/pointcloud_detect",1);
-        pointcloud_detect1=n.advertise<sensor_msgs::PointCloud2>("/pointcloud_detect1",1);
+        pointcloud_clustered=n.advertise<sensor_msgs::PointCloud2>("/pointcloud_clustered",10);
+        pointcloud_detect=n.advertise<sensor_msgs::PointCloud2>("/pointcloud_detect",10);
+        pointcloud_detect1=n.advertise<sensor_msgs::PointCloud2>("/pointcloud_detect1",10);
 //        Object_pub =n.advertise<detector3d::objectsofonemat>("Objects",10);
-        Objectimg_pub=n.advertise<sensor_msgs::Image>("Objectsimg",1);
-        Objectimg_pub1=n.advertise<sensor_msgs::Image>("Objectsimg1",1);
-
+        Objectimg_pub=n.advertise<sensor_msgs::Image>("Objectsimg",10);
+        Objectimg_pub1=n.advertise<sensor_msgs::Image>("Objectsimg1",10);
+        marker_pub = n.advertise<visualization_msgs::Marker>("visualization_marker", 10);
+        text_pub=n.advertise<visualization_msgs::MarkerArray>("classnames", 10);
+        marker_pub1 = n.advertise<visualization_msgs::Marker>("visualization_marker1", 10);
+        text_pub1=n.advertise<visualization_msgs::MarkerArray>("classnames1", 10);
     }
 
     //订阅相机内参数
@@ -153,6 +163,7 @@ public:
                 }
                 std::cout<<std::endl;
             }
+            resultfiles<<"CamD455 config!"<<"\n";
             lidar.initcamera(V_T,MTR,InnerTransformation_Color,caminfo.height,caminfo.width,0);
             Colorinfo= true;
         }
@@ -170,6 +181,7 @@ public:
                 }
                 std::cout<<std::endl;
             }
+            resultfiles<<"CamAstra config!"<<"\n";
             lidar.initcamera(V_T1,MTR1,InnerTransformation_Color1,caminfo.height,caminfo.width,1);
             Colorinfo1= true;
         }
@@ -307,6 +319,91 @@ public:
             Objectimg_pub1.publish(img);
             // 点云信号发布
         pcl::PointCloud<pcl::PointXYZI> cloud;
+        //目标框可视化
+        visualization_msgs::Marker Centerpoints,Boxs,classname;
+        visualization_msgs::MarkerArray classnames;
+        classname.header.frame_id=Centerpoints.header.frame_id = Boxs.header.frame_id  = "/base_link";
+        classname.header.stamp=Centerpoints.header.stamp = Boxs.header.stamp =  ros::Time::now();
+        classname.ns=Centerpoints.ns = Boxs.ns  = "Detected Bboxs";
+        classname.action=Centerpoints.action = Boxs.action = visualization_msgs::Marker::ADD;
+        classname.pose.orientation.w=Centerpoints.pose.orientation.w = Boxs.pose.orientation.w  = 1.0;
+        Centerpoints.id=0;Boxs.id=1;classname.id=2;
+        Centerpoints.type=visualization_msgs::Marker::POINTS;
+        Boxs.type=visualization_msgs::Marker::LINE_LIST;
+        classname.type=visualization_msgs::Marker::TEXT_VIEW_FACING;
+        Centerpoints.scale.x=0.2;        Centerpoints.scale.y=0.2;//尺寸
+        Boxs.scale.x=0.02;
+        classname.scale.z=0.2;
+        Centerpoints.color.g=1.0;
+        Centerpoints.color.a=1.0;//颜色
+        Boxs.color.b=1.0f;
+        Boxs.color.a=1.0;
+        classname.color.r=1.0;
+        classname.color.a=1.0;
+        //目标点和区域生成
+        if (LidarEnable&&!Objectlidartoimg.objects.empty()&&!Objectlidartoimg.clusters.empty()){
+            Objectlidartoimg.BoxesMatch();//匹配摄像头和雷达的点云
+            Objectlidartoimg.initobjects();//获取语义点云
+            classnames.markers.clear();
+            classname.id=2;
+            for (auto object:Objectlidartoimg.objects){
+               pcl::PointXYZI point;
+                geometry_msgs::Point p;
+                array<geometry_msgs::Point,8> ps;
+                float maxx=-200.0,maxy=-200.0,maxz=-200.0,minx=200.0,miny=200.0,minz=200.0;
+                if (object.Pointcloud->empty())
+                    continue;
+                for(auto i:object.Pointcloud->points){
+                  point.x=i.x;
+                  point.y=i.y;
+                  point.z=i.z;
+                    if (point.x>maxx)
+                        maxx=point.x;
+                    if (point.y>maxy)
+                        maxy=point.y;
+                    if (point.z>maxz)
+                        maxz=point.z;
+                    if (point.x<minx)
+                        minx=point.x;
+                    if (point.y<miny)
+                        miny=point.y;
+                    if (point.z<minz)
+                        minz=point.z;
+                  point.intensity = object.object.classID+1;//Intensity 用于可视化区分类别
+//                  cout<<"point="<<i.x<<i.y<<i.z<<endl;
+                  cloud.push_back(point);
+                }
+//                cout<<"min:"<<minx<<" "<<miny<<" "<<minz<<"max:"<<maxx<<" "<<maxy<<" "<<maxz<<endl;
+                p.x=(maxx+minx)/2;p.y=(maxy+miny)/2;p.z=(maxz+minz)/2;
+                Centerpoints.points.push_back(p);//中心点
+                ps.at(0).x=minx;ps.at(0).y=miny;ps.at(0).z=minz;//顶点1-7
+                ps.at(1).x=maxx;ps.at(1).y=miny;ps.at(1).z=minz;
+                ps.at(2).x=maxx;ps.at(2).y=maxy;ps.at(2).z=minz;
+                ps.at(3).x=minx;ps.at(3).y=maxy;ps.at(3).z=minz;
+                ps.at(4).x=minx;ps.at(4).y=miny;ps.at(4).z=maxz;
+                ps.at(5).x=maxx;ps.at(5).y=miny;ps.at(5).z=maxz;
+                ps.at(6).x=maxx;ps.at(6).y=maxy;ps.at(6).z=maxz;
+                ps.at(7).x=minx;ps.at(7).y=maxy;ps.at(7).z=maxz;
+                Boxs.points.push_back(ps.at(0)); Boxs.points.push_back(ps.at(1));//边12条
+                Boxs.points.push_back(ps.at(0)); Boxs.points.push_back(ps.at(3));
+                Boxs.points.push_back(ps.at(0)); Boxs.points.push_back(ps.at(4));
+                Boxs.points.push_back(ps.at(1)); Boxs.points.push_back(ps.at(2));
+                Boxs.points.push_back(ps.at(1)); Boxs.points.push_back(ps.at(5));
+                Boxs.points.push_back(ps.at(2)); Boxs.points.push_back(ps.at(3));
+                Boxs.points.push_back(ps.at(2)); Boxs.points.push_back(ps.at(6));
+                Boxs.points.push_back(ps.at(3)); Boxs.points.push_back(ps.at(7));
+                Boxs.points.push_back(ps.at(7)); Boxs.points.push_back(ps.at(6));
+                Boxs.points.push_back(ps.at(7)); Boxs.points.push_back(ps.at(4));
+                Boxs.points.push_back(ps.at(4)); Boxs.points.push_back(ps.at(5));
+                Boxs.points.push_back(ps.at(5)); Boxs.points.push_back(ps.at(6));
+                classname.pose.position=ps.at(5);
+                classname.text=object.object.classname;
+                classnames.markers.push_back(classname);
+                classname.id++;
+                resultfiles<<object.object.classname<<" "<<object.resultID<<" "<<setprecision(3)<<minx<<" "<<setprecision(3)<<miny<<" "<<setprecision(3)
+                <<minz<<" "<<setprecision(3)<<maxx<<" "<<setprecision(3)<<maxy<<" "<<setprecision(3)<<maxz<<" "<<object.Pointcloud->size()<<"\n";
+            }
+        }
         if (DepthEnable) {
             Objects ObjectDTI;
             if (camid==0)
@@ -317,42 +414,84 @@ public:
             {
                 ObjectDTI.BoxesMatch();
                 ObjectDTI.initobjects();
+                classnames.markers.clear();
+                classname.id=2;
                 for (auto object:ObjectDTI.objects) {
                     pcl::PointXYZI point;
+                    geometry_msgs::Point p;
+                    array<geometry_msgs::Point,8> ps;
+                    float maxx=-200.0,maxy=-200.0,maxz=-200.0,minx=200.0,miny=200.0,minz=200.0;
+                    if (object.Pointcloud->empty())
+                        continue;
                     for (auto i:object.Pointcloud->points) {
                         point.x = i.x;
                         point.y = i.y;
                         point.z = i.z;
                         point.intensity = 255 - object.object.classID * 10;//Intensity 用于可视化区分类别
+                        if (point.x>maxx)
+                            maxx=point.x;
+                        if (point.y>maxy)
+                            maxy=point.y;
+                        if (point.z>maxz)
+                            maxz=point.z;
+                        if (point.x<minx)
+                            minx=point.x;
+                        if (point.y<miny)
+                            miny=point.y;
+                        if (point.z<minz)
+                            minz=point.z;
 //                  cout<<"point="<<i.x<<i.y<<i.z<<endl;
                         cloud.push_back(point);
                     }
-                }
-            }
-        }
-        if (LidarEnable&&!Objectlidartoimg.objects.empty()&&!Objectlidartoimg.clusters.empty()){
-            Objectlidartoimg.BoxesMatch();//匹配摄像头和雷达的点云
-            Objectlidartoimg.initobjects();//获取语义点云
-            for (auto object:Objectlidartoimg.objects){
-               pcl::PointXYZI point;
-                for(auto i:object.Pointcloud->points){
-                  point.x=i.x;
-                  point.y=i.y;
-                  point.z=i.z;
-                  point.intensity = 255-object.object.classID*2;//Intensity 用于可视化区分类别
-//                  cout<<"point="<<i.x<<i.y<<i.z<<endl;
-                  cloud.push_back(point);
+                    p.x=(maxx+minx)/2;p.y=(maxy+miny)/2;p.z=(maxz+minz)/2;
+                    Centerpoints.points.push_back(p);//中心点
+                    ps.at(0).x=minx;ps.at(0).y=miny;ps.at(0).z=minz;//顶点1-7
+                    ps.at(1).x=maxx;ps.at(1).y=miny;ps.at(1).z=minz;
+                    ps.at(2).x=maxx;ps.at(2).y=maxy;ps.at(2).z=minz;
+                    ps.at(3).x=minx;ps.at(3).y=maxy;ps.at(3).z=minz;
+                    ps.at(4).x=minx;ps.at(4).y=miny;ps.at(4).z=maxz;
+                    ps.at(5).x=maxx;ps.at(5).y=miny;ps.at(5).z=maxz;
+                    ps.at(6).x=maxx;ps.at(6).y=maxy;ps.at(6).z=maxz;
+                    ps.at(7).x=minx;ps.at(7).y=maxy;ps.at(7).z=maxz;
+                    Boxs.points.push_back(ps.at(0)); Boxs.points.push_back(ps.at(1));//边12条
+                    Boxs.points.push_back(ps.at(0)); Boxs.points.push_back(ps.at(3));
+                    Boxs.points.push_back(ps.at(0)); Boxs.points.push_back(ps.at(4));
+                    Boxs.points.push_back(ps.at(1)); Boxs.points.push_back(ps.at(2));
+                    Boxs.points.push_back(ps.at(1)); Boxs.points.push_back(ps.at(5));
+                    Boxs.points.push_back(ps.at(2)); Boxs.points.push_back(ps.at(3));
+                    Boxs.points.push_back(ps.at(2)); Boxs.points.push_back(ps.at(6));
+                    Boxs.points.push_back(ps.at(3)); Boxs.points.push_back(ps.at(7));
+                    Boxs.points.push_back(ps.at(7)); Boxs.points.push_back(ps.at(6));
+                    Boxs.points.push_back(ps.at(7)); Boxs.points.push_back(ps.at(4));
+                    Boxs.points.push_back(ps.at(4)); Boxs.points.push_back(ps.at(5));
+                    Boxs.points.push_back(ps.at(5)); Boxs.points.push_back(ps.at(6));
+                    classname.pose.position=ps.at(5);
+                    classname.text=object.object.classname;
+                    classnames.markers.push_back(classname);
+                    classname.id++;
+                    resultfiles<<object.object.classname<<" "<<object.resultID<<" "<<setprecision(3)<<minx<<" "<<setprecision(3)<<miny<<" "<<setprecision(3)
+                               <<minz<<" "<<setprecision(3)<<maxx<<" "<<setprecision(3)<<maxy<<" "<<setprecision(3)<<maxz<<" "<<object.Pointcloud->size()<<"\n";
                 }
             }
         }
         sensor_msgs::PointCloud2 PointcloudDetect;
-        pcl::toROSMsg(cloud,PointcloudDetect);
         PointcloudDetect.header.stamp=ros::Time::now();
         PointcloudDetect.header.frame_id="base_link";
-        if(camid==0)
-            pointcloud_detect.publish(PointcloudDetect);
-        else if(camid==1)
-            pointcloud_detect1.publish(PointcloudDetect);
+        pcl::toROSMsg(cloud,PointcloudDetect);
+//        if (!cloud.empty()){
+            if(camid==0){
+                pointcloud_detect.publish(PointcloudDetect);
+                marker_pub.publish(Centerpoints);
+                marker_pub.publish(Boxs);
+                text_pub.publish(classnames);
+            }
+            if(camid==1){
+                pointcloud_detect1.publish(PointcloudDetect);
+                marker_pub1.publish(Centerpoints);
+                marker_pub1.publish(Boxs);
+                text_pub1.publish(classnames);
+            }
+//        }
     }
     //深度流处理回调函数
     void imgdepthcallback(const sensor_msgs::ImageConstPtr& msg){
@@ -431,10 +570,10 @@ public:
                 if (DepthEnable){
                     ObjectItoD.object.classID=(int)res[j].class_id;
                     ObjectItoD.object.classname=classNamesVec[(int)res[j].class_id];
-                    if (r.x<0)
+                    if (r.x<0){
+                        r.width+=r.x;
                         r.x=0;
-                    if (r.y<0)
-                        r.y=0;
+                    }
                     ObjectItoD.Rimg=r;
                     if (camid==0)
                         ObjectDepthtoimg.objects.push_back(ObjectItoD);
@@ -470,6 +609,7 @@ public:
 int main(int argc, char** argv)
 {
 //    image_detection_Cfg();//DNN二维目标检测初始化
+    resultfiles.open("/home/ax/rgbddata.txt", ios::binary | ios::app | ios::in | ios::out);//打开结果输入文件
 //////////////TensorRT//////////////////
     cudaSetDevice(DEVICE);
     std::vector<std::string> file_names;
@@ -530,6 +670,7 @@ int main(int argc, char** argv)
     context->destroy();
     engine->destroy();
     runtime->destroy();
+    resultfiles.close();
     return 0;
 
 }

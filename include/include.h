@@ -27,8 +27,8 @@
 #define NMS_THRESH 0.4
 #define CONF_THRESH 0.5
 #define BATCH_SIZE 1
-#define DepthEnable 0
-#define LidarEnable 1
+#define DepthEnable 1
+#define LidarEnable 0
 #define SLAMEnable 0
 //#define VIDEO_TYPE (3) //0 means laptop camera ;1 means images,2 means Videos,3 means Depthcamera,4 means lidar&camera;
 #define NORT (1)//Astra or Xtion have no RT of RGB&Depth Camera sys

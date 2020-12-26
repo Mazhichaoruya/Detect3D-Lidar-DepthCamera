@@ -46,7 +46,7 @@ void depth_pointcloud::init(cv::Mat &depthmat,int id){
             Eigen::Vector3f point3d =depthmat.at<uint16_t>(i, j)/1000.0*cam.RLtoC.inverse()*(cam.Camerainfo.inverse()*Eigen::Vector3f{j, i, 1}-cam.TLtoC);//转为深度相机坐标系 *MTR.inverse()
             pcl::PointXYZI point;
             point.x=point3d.x();point.y=point3d.y();point.z=point3d.z();
-            if (point.z>-0.70)//机器人设置高度-0.27
+            if (point.z>-0.27)//机器人设置高度-0.27
                 cloud->push_back(point);
             }
         }
@@ -166,7 +166,7 @@ void depth_pointcloud::pointcloud_cluster(){
                 Clu_tmp.cloudsize = Clu_tmp.pointcould->size();
                 Clu_tmp.R = cv::Rect(minx, miny, (maxx - minx), (maxy - miny));
                 vec_clu.push_back(Clu_tmp);
-            std::cout<<"RECT:"<<index<<":<"<<minx<<","<<miny<<"><"<<maxx<<","<<maxy<<"> size:"<<Clu_tmp.cloudsize<<std::endl;
+//            std::cout<<"RECT:"<<index<<":<"<<minx<<","<<miny<<"><"<<maxx<<","<<maxy<<"> size:"<<Clu_tmp.cloudsize<<std::endl;
                 index++;
             }
     }

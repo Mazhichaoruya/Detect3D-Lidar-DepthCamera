@@ -128,7 +128,7 @@ void lidar_pointcloud::pointcloud_cluster(){
                 auto B=cam.Camerainfo*cam.RLtoC*(point3d+cam.TLtoC);
                 Eigen::Vector3f imgpix=B/B.z();
 //            Eigen::Vector3f imgpix=Camerainfo*RLtoC*(point3d-TLtoC)/tmp.z;
-//            if (imgpix.x()>=0&&imgpix.y()>=0&&B.z()>0&&imgpix.x()<imagewidth-1&&imgpix.y()<imageheigth-1) {
+            if (imgpix.x()>=0&&imgpix.y()>=0&&B.z()>0&&imgpix.x()<cam.imagewidth-1&&imgpix.y()<cam.imageheigth-1) {
 //                std::cout<<"imgpix:"<<imgpix.x()<<" "<<imgpix.y()<<" "<<imgpix.z()<<std::endl;
                 if (minx>imgpix.x())
                     minx=imgpix.x();
@@ -144,7 +144,7 @@ void lidar_pointcloud::pointcloud_cluster(){
 //                lidar_clus.at<cv::Vec3b>(static_cast<int>(imgpix.y()), static_cast<int>(imgpix.x()))[1] =125*j/2;//-j*255/(cluster_indices.end()-cluster_indices.begin());
 //                lidar_clus.at<cv::Vec3b>(static_cast<int>(imgpix.y()), static_cast<int>(imgpix.x()))[2] =125*(j%2+1);//-j*255/(cluster_indices.end()-cluster_indices.begin());
 //                lidar_depth.at<uint16_t>(static_cast<int>(imgpix.y()), static_cast<int>(imgpix.x())) = static_cast<uint16_t>(imgpix.z());
-//            }
+            }
             }
             if (!Clu_tmp.pointcould->empty()){
                 Clu_tmp.index=cam.index;//标记相机编号
@@ -154,10 +154,12 @@ void lidar_pointcloud::pointcloud_cluster(){
 //                cv::rectangle(lidar_clus, Clu_tmp.R, cv::Scalar(0, 0, 255), 1);
 //                cv::rectangle(color_mat, Clu_tmp.R, cv::Scalar(0, 0, 255), 1);
                 vec_clu.push_back(Clu_tmp);
+//                cout<<"camera id:"<<Clu_tmp.index<<endl;
 //            std::cout<<"RECT:"<<index<<":<"<<minx<<","<<miny<<"><"<<maxx<<","<<maxy<<"> size:"<<Clu_tmp.cloudsize<<std::endl;
             }
         }
     }
+//    cout<<"all camera name:"<<vec_clu.size()<<endl;
     cloud_cluster->width = cloud_cluster->points.size();
     cloud_cluster->height = 1;
 //    show_point_cloud(cloud_cluster, "colored clusters of point cloud");//可视化

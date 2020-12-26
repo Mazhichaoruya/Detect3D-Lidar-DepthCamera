@@ -34,7 +34,7 @@ bool KMeans::InitKCenter( )//m_k ==3
         Eigen::Vector3f imgpix = B / B.z();
         auto distance=DistBetweenPoints(mv_pntcloud.at(i).pnt,zero);
         if (imgpix.x()>=rectobj.x&&imgpix.y()>=rectobj.y&&imgpix.x()<rectobj.x+rectobj.width&&imgpix.y()<rectobj.y+rectobj.height){//落在目标检测框内的点云
-         mv_pntcloud.at(i).connection_constraint={-1,1,0};  //目标 框内增加必连约束 0为目标类 1为非目标点 2为其他类
+         mv_pntcloud.at(i).connection_constraint={-2,2,0};  //目标 框内增加必连约束 0为目标类 1为非目标点 2为其他类
         if(distance<last_in){//目标类起始点是目标框内最近点
             mv_center.at(0)=mv_pntcloud.at(i).pnt;
             last_in=distance;
@@ -46,7 +46,7 @@ bool KMeans::InitKCenter( )//m_k ==3
         mv_pntcloud.at(i).weight=1-((imgpix.x()-centerx)*(imgpix.x()-centerx)+(imgpix.y()-centery)*(imgpix.y()-centery))/r2;//在目标区域内的约束权重以单位圆均匀分布
         }
         else{
-            mv_pntcloud.at(i).connection_constraint={1,-1,0};//目标 框外增加勿连约束
+            mv_pntcloud.at(i).connection_constraint={2,-2,0};//目标 框外增加勿连约束
             if(distance>last_out_max){ //非目标点--框外最远点作为起始点
                 mv_center.at(1)=mv_pntcloud.at(i).pnt;
                 last_out_max=distance;

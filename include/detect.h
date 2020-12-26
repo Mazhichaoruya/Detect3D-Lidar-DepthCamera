@@ -13,6 +13,7 @@ struct ObjectImgtoDepth {
     int index;
     detector3d::object object;
     pcl::PointCloud<pcl::PointXYZI>::Ptr Pointcloud;
+    int resultID;
 };
 struct Objects{
     float IOU_Threshold_max,IOU_Threshold_min;
@@ -104,11 +105,13 @@ void Objects::initobjects() {
         objects.at(i).Pointcloud.reset(new pcl::PointCloud<pcl::PointXYZI>);
         if (objects.at(i).index>0){
           objects.at(i).Pointcloud=clusters.at(objects.at(i).index-1).pointcould;
-//          cout<<"Matched successfully Only by First Clustered!"<<"poincloud size:"<<objects.at(i).Pointcloud->size()<<endl;
+            objects.at(i).resultID=1;
+            cout<<"Matched successfully Only by First Clustered! "<<objects.at(i).object.classname<<" poincloud size:"<<objects.at(i).Pointcloud->size()<<endl;
         }
         else if (objects.at(i).index==0){//失败
             objects.at(i).Pointcloud->points.clear();
-//            cout<<"Matched Failed!"<<endl;
+            objects.at(i).resultID=0;
+            cout<<"Matched Failed! "<<objects.at(i).object.classname<<endl;
         }else{ ////进一步 半监督Kmeans聚类操作
             KMeans kmclusters;
             kmclusters.SetK(3);//3类中 0 1 2 依次为目标类 非目标类  其他
@@ -138,7 +141,8 @@ void Objects::initobjects() {
 //                }
 //            }
 //            show_point_cloud(pckmeans, "pointcloud pckmeans");
-//            cout<<"Matched by Twice Clustered successfully!"<<"poincloud size:"<<kmclusters.m_grp_pntcloud.at(0).size()<<endl;
+            cout<<"Matched by Twice Clustered successfully! "<<objects.at(i).object.classname<<" poincloud size:"<<kmclusters.m_grp_pntcloud.at(0).size()<<endl;
+            objects.at(i).resultID=2;
         }
     }
 }
